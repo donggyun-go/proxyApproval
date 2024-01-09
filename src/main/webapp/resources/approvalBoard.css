@@ -1,0 +1,138 @@
+@charset "UTF-8";
+
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f9f9f9;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    background-color: #fff;
+    width: 90%;
+    margin: 2% auto;
+    padding: 20px 30px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.08);
+    border-radius: 8px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e1e1e1;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.header .actions {
+    display: flex;
+    gap: 10px;
+}
+
+.search-section {
+    border: 1px solid #ddd;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 20px 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.search-section form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    width: 100%; 
+    justify-content: space-between;  
+}
+
+.border-right {
+    border-right: 1px solid #000;
+    padding-right: 8px; 
+    margin-right: 8px; 
+}
+
+.search-section select, 
+.search-section input[type="text"],
+.search-section input[type="date"] {
+    margin: 4px;
+    padding: 8px 10px;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+}
+
+.search-section select,
+.search-section input[type="date"] {
+    flex: 0.5; 
+}
+
+.search-section input[name='keyword'] {
+    flex: 2; 
+}
+
+.search-section button {
+    margin-left: auto; 
+    padding: 5px 15px; 
+}
+
+
+.search-section button, .header button, #reset {
+    width: 70px; 
+    height: 35px; 
+    background-color: #007BFF;
+    color: #fff;  
+    padding: 0;    
+}
+
+.header button, .search-section button, #reset {
+    background-color: #007BFF;  
+    border: none;
+    border-radius: 4px;
+    color: #fff;   
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.header button:hover, .search-section button:hover, #reset {
+    background-color: #0056b3;  
+}
+
+#reset{
+	margin-left: 4px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+table, th, td {
+    border: 1px solid #e1e1e1;
+}
+
+th, td {
+    padding: 10px;
+    text-align: center;
+}
+
+th {
+    background-color: #007BFF;  
+    color: #fff;  
+}
+
+label {
+    font-weight: bold;
+}
+
+table tbody tr:hover {
+    background-color: #f5f5f5; 
+}
+
+.emptyContent {
+    font-weight: bold;
+    pointer-events: none;
+    cursor: default;
+}

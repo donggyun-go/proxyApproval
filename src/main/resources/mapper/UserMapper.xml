@@ -1,0 +1,530 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+  PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.my.dept.repository.UserDAO">
+	<resultMap id="UserResultMap" type="com.my.dept.domain.UserVO">
+	    <result property="userId" column="USER_ID"/>
+	    <result property="userPass" column="USER_PASS"/>
+	    <result property="userName" column="USER_NAME"/>
+	    <result property="userRank" column="USER_RANK"/>
+	    <result property="sessionId" column="SESSION_KEY"/>
+	    <result property="sessionLimit" column="SESSION_LIMIT"/>
+	</resultMap>
+	<resultMap id="ApprovalResultMap" type="com.my.dept.domain.ApprovalVO">
+	    <result property="seq" column="SEQ"/>
+	    <result property="userId" column="USER_ID"/> 
+	    <result property="userName" column="USER_NAME"/>  
+	    <result property="approvalTitle" column="APPROVAL_TITLE"/>
+	    <result property="approvalContent" column="APPROVAL_CONTENT"/>
+	    <result property="regDate" column="REG_DATE"/>
+	    <result property="approvalDate" column="APPROVAL_DATE"/>
+	    <result property="approver" column="APPROVER"/>
+	    <result property="approverName" column="APPROVER_NAME"/>
+	    <result property="proxyApprover" column="PROXY_APPROVER"/>
+	    <result property="approvalStatus" column="APPROVAL_STATUS"/>
+	</resultMap>
+	<resultMap id="ApprovalHistoryResultMap" type="com.my.dept.domain.ApprovalHistoryVO">
+	    <result property="historySeq" column="HISTORY_SEQ"/>
+	    <result property="historyDate" column="HISTORY_DATE"/>
+	    <result property="approver" column="APPROVER"/>
+	    <result property="proxyApprover" column="PROXY_APPROVER"/>
+	    <result property="approvalStatus" column="APPROVAL_STATUS"/>
+	    <result property="approvalSeq" column="APPROVAL_SEQ"/>
+	</resultMap>
+	
+	<select id="findUserById" resultMap="UserResultMap">
+	    SELECT
+	        USER_ID, 
+	        USER_PASS, 
+	        USER_NAME, 
+	        USER_RANK, 
+	        SESSION_KEY,
+	        SESSION_LIMIT
+	    FROM 
+	        USER_TABLE
+	    WHERE 
+	        USER_ID=#{userId}
+	</select>
+	<select id="login" resultMap="UserResultMap">
+	    SELECT
+	      *
+	    FROM USER_TABLE
+	    WHERE user_id = #{userId}
+	</select>
+	<update id="keepLogin">
+	    UPDATE 
+	    	USER_TABLE
+	    SET 
+	    	SESSION_KEY = #{sessionId},
+	    	SESSION_LIMIT = #{sessionLimit}
+	    WHERE 
+	    	USER_ID = #{userId}
+	</update>
+	<select id="check" resultMap="UserResultMap">
+		SELECT
+			*
+		FROM 
+			USER_TABLE
+		WHERE 
+			session_key = #{value}
+	</select>
+    <insert id="join" parameterType="com.my.dept.domain.UserVO">
+        INSERT INTO USER_TABLE 
+        	(USER_ID, 
+        	USER_PASS, 
+        	USER_NAME, 
+        	USER_RANK)
+        VALUES 
+        	(#{userId}, 
+        	#{userPass}, 
+        	#{userName}, 
+        	#{userRank})
+    </insert>	
+	<select id="getAllApproval" resultMap="ApprovalResultMap">
+	SELECT
+	    SEQ,
+	    A.USER_ID,
+	    (SELECT USER_NAME FROM USER_TABLE U WHERE U.USER_ID = A.USER_ID) AS USER_NAME,
+	    APPROVAL_TITLE,
+	    APPROVAL_CONTENT,
+	    REG_DATE,
+	    CASE 
+	        WHEN A.APPROVAL_STATUS NOT IN ('tmp', 'wait') THEN
+	            (SELECT APPROVAL_DATE FROM APPROVAL_HISTORY AH WHERE AH.APPROVAL_SEQ = A.SEQ ORDER BY AH.HISTORY_SEQ DESC FETCH FIRST 1 ROW ONLY)
+	        ELSE
+	            NULL
+	    END AS APPROVAL_DATE,	    
+	    CASE 
+	        WHEN A.APPROVAL_STATUS NOT IN ('tmp', 'wait') THEN
+	            (SELECT APPROVER FROM APPROVAL_HISTORY AH WHERE AH.APPROVAL_SEQ = A.SEQ ORDER BY AH.HISTORY_SEQ DESC FETCH FIRST 1 ROW ONLY)
+	        ELSE
+	            NULL
+	    END AS APPROVER,
+	    CASE 
+	        WHEN A.APPROVAL_STATUS NOT IN ('tmp', 'wait') THEN
+	            (SELECT USER_NAME FROM USER_TABLE U WHERE U.USER_ID = 
+	                (SELECT APPROVER FROM APPROVAL_HISTORY AH WHERE AH.APPROVAL_SEQ = A.SEQ ORDER BY AH.HISTORY_SEQ DESC FETCH FIRST 1 ROW ONLY)
+	            )
+	        ELSE
+	            NULL
+	    END AS APPROVER_NAME,
+	    DECODE(APPROVAL_STATUS, 
+	        'tmp', '임시저장',
+	        'wait', '결재대기',
+	        'ing', '결재중',
+	        'complete', '결재완료',
+	        'return', '반려'
+	    ) AS APPROVAL_STATUS
+	FROM
+	    APPROVAL_TABLE A
+	WHERE
+	<choose>
+	    <when test="userRank == 'staff' or userRank == 'am'">
+	    	USER_ID = #{userId,jdbcType=VARCHAR}
+	    <if test="proxyUserRank == 'manager'">
+	    OR APPROVAL_STATUS = 'wait'
+	    OR APPROVAL_STATUS != 'tmp'  
+	        AND SEQ IN ( SELECT APPROVAL_SEQ FROM (
+	                            SELECT APPROVAL_SEQ, 
+	                                   APPROVER, 
+	                                   ROW_NUMBER() OVER(PARTITION BY APPROVAL_SEQ ORDER BY HISTORY_SEQ DESC) AS RN 
+	                            FROM APPROVAL_HISTORY
+	                        ) 
+	        WHERE APPROVER = #{userId,jdbcType=VARCHAR} AND RN &lt;= 2)
+	    </if>
+	    <if test="proxyUserRank == 'gm'">
+	    OR APPROVAL_STATUS = 'ing'
+	    OR SEQ IN ( SELECT APPROVAL_SEQ FROM (
+	                    SELECT APPROVAL_SEQ, 
+	                           APPROVER, 
+	                           ROW_NUMBER() OVER(PARTITION BY APPROVAL_SEQ ORDER BY HISTORY_SEQ DESC) AS RN 
+	                    FROM APPROVAL_HISTORY
+	               ) 
+	    WHERE APPROVER = #{userId,jdbcType=VARCHAR} AND RN &lt;= 1)  
+	    </if>
+	    </when>
+	    <when test="userRank == 'manager'">
+	    USER_ID = #{userId,jdbcType=VARCHAR}
+	    OR APPROVAL_STATUS = 'wait'
+	    OR APPROVAL_STATUS != 'tmp'  
+	    AND SEQ IN ( SELECT APPROVAL_SEQ FROM (
+	                        SELECT APPROVAL_SEQ, 
+	                               APPROVER, 
+	                               ROW_NUMBER() OVER(PARTITION BY APPROVAL_SEQ ORDER BY HISTORY_SEQ DESC) AS RN 
+	                        FROM APPROVAL_HISTORY
+	                    ) 
+	        WHERE APPROVER = #{userId,jdbcType=VARCHAR} AND RN &lt;= 2)
+	    <if test="proxyUserRank == 'gm'">
+	    OR APPROVAL_STATUS = 'ing'
+	    </if>
+	    </when>
+	    <when test="userRank == 'gm'">
+	    USER_ID = #{userId,jdbcType=VARCHAR}
+	    OR APPROVAL_STATUS IN ('ing','complete')
+	    OR SEQ IN ( SELECT APPROVAL_SEQ FROM (
+	                    SELECT APPROVAL_SEQ, 
+	                           APPROVER, 
+	                           ROW_NUMBER() OVER(PARTITION BY APPROVAL_SEQ ORDER BY HISTORY_SEQ DESC) AS RN 
+	                    FROM APPROVAL_HISTORY
+	               ) 
+	    	WHERE APPROVER = #{userId,jdbcType=VARCHAR} AND RN &lt;= 1)
+	    </when>
+	</choose>
+	    ORDER BY
+	        A.SEQ DESC
+	</select>
+
+    <insert id="writeApproval" parameterType="com.my.dept.domain.ApprovalVO">
+        INSERT INTO 
+        	APPROVAL_TABLE(
+        	SEQ,
+        	USER_ID, 
+        	APPROVAL_TITLE,
+        	APPROVAL_CONTENT, 
+        	REG_DATE,  
+        	APPROVAL_STATUS)
+        VALUES(
+        	(select nvl(max(seq), 0) +1 from approval_table),
+        	#{userId}, 
+        	#{approvalTitle},
+        	#{approvalContent}, 
+        	#{regDate},  
+        	#{approvalStatus})
+    </insert>
+	<select id="findLatestSeq" resultType="int">
+	    SELECT 
+	        NVL(MAX(seq), 0) + 1
+	    FROM 
+	        APPROVAL_TABLE
+	</select>
+    <select id="detail" parameterType="int" resultMap="ApprovalResultMap">
+	    SELECT 
+	        A.SEQ,
+	        A.USER_ID,
+	        U.USER_NAME,
+	        A.APPROVAL_TITLE,
+	        A.APPROVAL_CONTENT,
+	        A.REG_DATE,
+	        A.APPROVAL_DATE,
+	        A.APPROVER,
+	        A.APPROVAL_STATUS 
+	    FROM 
+	        APPROVAL_TABLE A
+	    JOIN 
+	    	USER_TABLE U ON A.USER_ID = U.USER_ID
+	    WHERE A.SEQ = #{seq}
+    </select>
+	<update id="updateApprovalStatus">
+	    UPDATE 
+	        APPROVAL_TABLE 
+	    SET 
+	        APPROVAL_STATUS = #{approvalStatus, jdbcType=VARCHAR}
+	        <if test="approvalTitle != null">
+	            ,APPROVAL_TITLE = #{approvalTitle, jdbcType=VARCHAR}
+	        </if>
+	        <if test="approvalContent != null">
+	            ,APPROVAL_CONTENT = #{approvalContent, jdbcType=VARCHAR}
+	        </if>
+	    WHERE 
+	        seq = #{seq}
+	</update>
+	<insert id="insertApprovalHistory" parameterType="com.my.dept.domain.ApprovalHistoryVO">
+	    INSERT INTO APPROVAL_HISTORY
+	    (
+	        HISTORY_SEQ, 
+	        HISTORY_DATE, 
+	        APPROVER, 
+	        PROXY_APPROVER,
+	        APPROVAL_STATUS, 
+	        APPROVAL_SEQ
+	    ) 
+	    VALUES 
+	    (
+	        (select nvl(max(HISTORY_SEQ), 0) + 1 from APPROVAL_HISTORY), 
+	        #{historyDate, jdbcType=TIMESTAMP}, 
+	        #{approver, jdbcType=VARCHAR}, 
+	        #{proxyApprover, jdbcType=VARCHAR},
+	        #{approvalStatus, jdbcType=VARCHAR}, 
+	        #{approvalSeq, jdbcType=INTEGER}
+	    )
+	</insert>
+	<select id="getApprovalHistoryList" parameterType="int" resultMap="ApprovalHistoryResultMap">
+	    SELECT 
+	        AH.HISTORY_SEQ,
+	        AH.HISTORY_DATE,
+	        U.USER_NAME AS APPROVER,
+	       (CASE 
+	            WHEN AH.PROXY_APPROVER IS NOT NULL THEN U2.USER_NAME 
+	            ELSE NULL 
+	        END) AS PROXY_APPROVER,	        
+	        AH.APPROVAL_STATUS,
+	        AH.APPROVAL_SEQ
+	    FROM 
+	        APPROVAL_HISTORY AH
+	    INNER JOIN 
+	        USER_TABLE U ON AH.APPROVER = U.USER_ID
+	    LEFT JOIN 
+	        USER_TABLE U2 ON AH.PROXY_APPROVER = U2.USER_ID  
+	    WHERE 
+	        AH.APPROVAL_SEQ = #{seq}
+	</select>
+	<select id="search" resultMap="ApprovalResultMap">
+	SELECT 
+	    A.SEQ,
+	    U.USER_NAME, 
+	    A.APPROVAL_TITLE,
+	    A.APPROVAL_CONTENT,
+	    A.REG_DATE,
+	    CASE 
+	        WHEN A.APPROVAL_STATUS NOT IN ('tmp', 'wait') THEN 
+	            COALESCE(RH.HISTORY_DATE, A.APPROVAL_DATE) 
+	        ELSE 
+	            NULL 
+	    END AS APPROVAL_DATE,
+	    CASE 
+	        WHEN A.APPROVAL_STATUS NOT IN ('tmp', 'wait') THEN 
+	            COALESCE(UH.USER_NAME, U.USER_NAME)
+	        ELSE 
+	            NULL 
+	    END AS APPROVER,
+	    CASE 
+	        WHEN A.APPROVAL_STATUS NOT IN ('tmp', 'wait') THEN 
+	            U2.USER_NAME 
+	        ELSE 
+	            NULL 
+	    END AS PROXY_APPROVER,
+	    DECODE(A.APPROVAL_STATUS, 
+	        'tmp', '임시저장',
+	        'wait', '결재대기',
+	        'ing', '결재중',
+	        'complete', '결재완료',
+	        'return', '반려'
+	    ) AS APPROVAL_STATUS
+	FROM 
+	    APPROVAL_TABLE A
+	INNER JOIN 
+	    USER_TABLE U ON A.USER_ID = U.USER_ID
+	LEFT OUTER JOIN (
+	    SELECT 
+	        H.HISTORY_SEQ,
+	        H.HISTORY_DATE,
+	        H.APPROVER,
+	        H.APPROVAL_STATUS,
+	        H.APPROVAL_SEQ,
+	        H.PROXY_APPROVER, 
+	        ROW_NUMBER() OVER(PARTITION BY H.APPROVAL_SEQ ORDER BY H.HISTORY_DATE DESC) AS rn
+	    FROM 
+	        APPROVAL_HISTORY H
+	) RH ON A.SEQ = RH.APPROVAL_SEQ AND (RH.rn = 1 OR RH.rn IS NULL)
+	LEFT JOIN
+	    USER_TABLE UH ON RH.APPROVER = UH.USER_ID
+	LEFT JOIN 
+	    USER_TABLE U2 ON RH.PROXY_APPROVER = U2.USER_ID
+		WHERE
+		(
+        <choose>
+            <when test="userRank == 'staff' or userRank == 'am'">
+                A.USER_ID = #{userId,jdbcType=VARCHAR}
+                OR AH.APPROVER = #{userId,jdbcType=VARCHAR}
+                   AND (
+                       AH.HISTORY_SEQ > (
+                           SELECT MAX(H2.HISTORY_SEQ) 
+                           FROM APPROVAL_HISTORY H2 
+                           WHERE H2.APPROVAL_SEQ = AH.APPROVAL_SEQ AND H2.APPROVAL_STATUS = 'return'
+                       )
+                       OR NOT EXISTS (
+                           SELECT 1 FROM APPROVAL_HISTORY H3
+                           WHERE H3.APPROVAL_SEQ = AH.APPROVAL_SEQ AND H3.APPROVAL_STATUS = 'return'
+                       )
+                   )
+          		)               
+				<if test="proxyUserRank == 'manager'">
+				    OR A.APPROVAL_STATUS = 'wait'
+				    OR A.SEQ IN (
+	                    SELECT DISTINCT AH.APPROVAL_SEQ
+	                    FROM APPROVAL_HISTORY AH
+	                    WHERE 
+	                        AH.APPROVER = #{userId,jdbcType=VARCHAR}
+	                        AND (
+	                            AH.HISTORY_SEQ > (
+	                                SELECT MAX(H2.HISTORY_SEQ) 
+	                                FROM APPROVAL_HISTORY H2 
+	                                WHERE H2.APPROVAL_SEQ = AH.APPROVAL_SEQ AND H2.APPROVAL_STATUS = 'return'
+	                            )
+	                            OR NOT EXISTS (
+	                                SELECT 1 FROM APPROVAL_HISTORY H3
+	                                WHERE H3.APPROVAL_SEQ = AH.APPROVAL_SEQ AND H3.APPROVAL_STATUS = 'return'
+	                            )
+	                        )
+	                  )
+				</if>
+				<if test="proxyUserRank == 'gm'">
+				    OR  A.APPROVAL_STATUS IN ('ing')
+	                OR 
+	                (
+	                    A.APPROVAL_STATUS IN('tmp', 'wait', 'return','complete') AND A.USER_ID = #{userId,jdbcType=VARCHAR}
+	                )
+	                OR 
+	                (
+	                    A.APPROVAL_STATUS = 'return' 
+	                    AND EXISTS (
+	                        SELECT 1 
+	                        FROM APPROVAL_HISTORY AH
+	                        WHERE 
+	                            AH.APPROVAL_SEQ = A.SEQ
+	                            AND AH.APPROVER = #{userId,jdbcType=VARCHAR}
+	                            AND AH.APPROVAL_STATUS = 'return'
+	                            AND AH.HISTORY_SEQ = (
+	                                SELECT MAX(AH2.HISTORY_SEQ)
+	                                FROM APPROVAL_HISTORY AH2
+	                                WHERE AH2.APPROVAL_SEQ = A.SEQ
+	                            )
+	                    )
+	                )
+				</if>
+            </when>
+            <when test="userRank == 'manager'">
+                A.USER_ID = #{userId,jdbcType=VARCHAR}
+                OR A.APPROVAL_STATUS = 'wait'
+                OR A.SEQ IN (
+                    SELECT DISTINCT AH.APPROVAL_SEQ
+                    FROM APPROVAL_HISTORY AH
+                    WHERE 
+                        AH.APPROVER = #{userId,jdbcType=VARCHAR}
+                        AND (
+                            AH.HISTORY_SEQ > (
+                                SELECT MAX(H2.HISTORY_SEQ) 
+                                FROM APPROVAL_HISTORY H2 
+                                WHERE H2.APPROVAL_SEQ = AH.APPROVAL_SEQ AND H2.APPROVAL_STATUS = 'return'
+                            )
+                            OR NOT EXISTS (
+                                SELECT 1 FROM APPROVAL_HISTORY H3
+                                WHERE H3.APPROVAL_SEQ = AH.APPROVAL_SEQ AND H3.APPROVAL_STATUS = 'return'
+                            )
+                        )
+                )
+               	<if test="proxyUserRank == 'gm'">
+               		OR A.APPROVAL_STATUS IN ('ing')
+               	</if>
+            </when>
+            <when test="userRank == 'gm'">
+                A.APPROVAL_STATUS IN ('ing', 'complete')
+                OR 
+                (
+                    A.APPROVAL_STATUS IN('tmp', 'wait', 'return') AND A.USER_ID = #{userId,jdbcType=VARCHAR}
+                )
+                OR 
+                (
+                    A.APPROVAL_STATUS = 'return' 
+                    AND EXISTS (
+                        SELECT 1 
+                        FROM APPROVAL_HISTORY AH
+                        WHERE 
+                            AH.APPROVAL_SEQ = A.SEQ
+                            AND AH.APPROVER = #{userId,jdbcType=VARCHAR}
+                            AND AH.APPROVAL_STATUS = 'return'
+                            AND AH.HISTORY_SEQ = (
+                                SELECT MAX(AH2.HISTORY_SEQ)
+                                FROM APPROVAL_HISTORY AH2
+                                WHERE AH2.APPROVAL_SEQ = A.SEQ
+                            )
+                    )
+                )
+            </when>
+        </choose>
+        )
+		AND (RH.rn = 1 OR RH.rn IS NULL)
+        <if test="status == 'tempStorage'">
+            AND A.APPROVAL_STATUS = 'tmp' 
+            AND A.USER_ID = #{userId,jdbcType=VARCHAR}
+        </if>
+        <if test="status == 'watingApproval'">
+            AND A.APPROVAL_STATUS = 'wait'
+        </if>
+         <if test="status == 'Approvaling'">
+            AND A.APPROVAL_STATUS = 'ing'
+        </if>
+        <if test="status == 'CompleteApproval'">
+            AND A.APPROVAL_STATUS = 'complete'
+        </if>
+        <if test="status == 'return'">
+            AND A.APPROVAL_STATUS = 'return'
+        </if>	    
+        <if test="type == 'writer'">
+            AND U.USER_NAME LIKE '%' || #{keyword} || '%'
+        </if>
+		<if test="type == 'approver'">
+		    AND UH.USER_NAME LIKE '%' || #{keyword} || '%'
+		    AND A.APPROVAL_STATUS NOT IN ('tmp', 'wait')
+		</if>
+        <if test="type == 'titleContent'">
+            AND (A.APPROVAL_TITLE LIKE '%' || #{keyword} || '%' OR A.APPROVAL_CONTENT LIKE '%' || #{keyword} || '%')
+        </if>
+        <if test="startDate != null">
+            AND A.REG_DATE &gt;= #{startDate}
+        </if>
+        <if test="endDate != null">
+            AND A.REG_DATE &lt;= #{endDate}
+        </if>    
+	    ORDER BY
+	        A.SEQ DESC 
+	</select>
+	<select id="findUserByRank" resultMap="UserResultMap">
+		SELECT 
+		    u.USER_ID, 
+		    u.USER_NAME, 
+		    u.USER_RANK,
+		    p.PROXY_SEQ,
+		    p.PROXY_ID,
+		    p.PROXY_DATE
+		FROM 
+		    USER_TABLE u
+		LEFT JOIN 
+		    proxy_approval_table p ON u.USER_ID = p.PROXY_ID OR u.USER_ID = p.APPROVAL_ID
+        WHERE
+	  <choose>
+  		<when test="userRank == 'manager'">
+	  		u.USER_RANK IN ('staff', 'am')
+		</when>
+		<when test="userRank == 'gm'">
+  			u.USER_RANK IN ('am', 'manager')
+		</when>
+	  </choose>
+      AND (
+      p.PROXY_ID IS NULL
+      OR p.PROXY_DATE &lt;= CURRENT_TIMESTAMP - INTERVAL '12' HOUR
+  	  )
+    </select>
+	<insert id="insertProxyApproval" parameterType="com.my.dept.domain.ProxyApprovalVO">
+	    INSERT INTO 
+    	PROXY_APPROVAL_TABLE (
+	    	PROXY_SEQ, 
+	    	PROXY_ID, 
+	    	APPROVAL_ID,
+	    	PROXY_DATE)
+	    VALUES (
+		    (select nvl(max(proxy_seq), 0) +1 from proxy_approval_table), 
+		    #{proxyId}, 
+		    #{approvalId}, 
+		    #{proxyDate,jdbcType=TIMESTAMP})
+	</insert>
+	<select id="findProxy" resultType="com.my.dept.domain.ProxyApprovalVO">
+	    SELECT 
+	        p.proxy_seq,
+	        p.proxy_id,
+	        p.approval_id as approvalId,
+	        u.user_name as approvalName,
+	        u.user_rank as approvalRank, 
+	        p.proxy_date as startDate, 
+	        (p.proxy_date + INTERVAL '12' HOUR) as endDate
+	    FROM 
+	        proxy_approval_table p
+	    JOIN 
+	        user_table u ON p.approval_id = u.user_id
+	    WHERE 
+	        p.proxy_id = #{userId,jdbcType=VARCHAR}
+	        AND (p.proxy_date + INTERVAL '12' HOUR) > CURRENT_TIMESTAMP
+	</select>
+</mapper>
